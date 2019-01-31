@@ -11,6 +11,7 @@ class Attention(Layer):
                  W_constraint=None, b_constraint=None,
                  bias=True, **kwargs):
         """
+        用于文本分类任务的注意力层
         Keras Layer that implements an Attention mechanism for temporal data.
         Supports Masking.
         Follows the work of Raffel et al. [https://arxiv.org/abs/1512.08756]
@@ -69,30 +70,42 @@ class Attention(Layer):
         input_shape = K.int_shape(x)
 
         features_dim = self.features_dim
-        # step_dim = self.step_dim
+        # 这里应该是 step_dim是我们指定的参数，它等于input_shape[1],也就是rnn的timesteps
         step_dim = input_shape[1]
-
-        eij = K.reshape(K.dot(K.reshape(x, (-1, features_dim)), K.reshape(self.W, (features_dim, 1))), (-1, step_dim))
+        # 输入和参数分别reshape再点乘后，tensor.shape变成了(batch_size*timesteps, 1),
+        # 之后每个batch要分开进行归一化
+        # 所以应该有 eij = K.reshape(..., (-1, timesteps))
+        eij = K.reshape(K.dot(K.reshape(x, (-1, features_dim)),
+                              K.reshape(self.W, (features_dim, 1))), (-1, step_dim))
 
         if self.bias:
             eij += self.b[:input_shape[1]]
 
+        # RNN一般默认激活函数为tanh, 对attention来说激活函数差别不打，因为要做softmax
         eij = K.tanh(eij)
 
         a = K.exp(eij)
 
         # apply mask after the exp. will be re-normalized next
         if mask is not None:
+            # 如果前面的层有mask，那么后面这些被mask掉的timestep肯定是不能参与计算输出的，
+            # 也就是将他们的attention权重设为0
             # Cast the mask to floatX to avoid float64 upcasting in theano
             a *= K.cast(mask, K.floatx())
 
         # in some cases especially in the early stages of training the sum may be almost zero
         # and this results in NaN's. A workaround is to add a very small positive number ε to the sum.
+        # cast是做类型转换，keras计算时会检查类型，可能是因为用gpu的原因
         a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())
-
+        # a = K.expand_dims(a, axis=-1) , axis默认为-1， 表示在最后扩充一个维度。
+        # 比如shape = (3,)变成 (3, 1)
         a = K.expand_dims(a)
+        # 此时a.shape = (batch_size, timesteps, 1), x.shape = (batch_size, timesteps, units)
         weighted_input = x * a
-    	# print weigthted_input.shape
+        # print(weighted_input.shape)
+        # weighted_input的shape为 (batch_size, timesteps, units),
+        # 每个timestep的输出向量已经乘上了该timestep的权重
+        # weighted_input在axis=1上取和，返回值的shape为 (batch_size, 1, units)
         return K.sum(weighted_input, axis=1)
 
     def compute_output_shape(self, input_shape):

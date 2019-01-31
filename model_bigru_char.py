@@ -1,13 +1,8 @@
 from keras.backend.tensorflow_backend import set_session
 import tensorflow as tf
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-set_session(tf.Session(config=config))
 import random
-random.seed = 42
 import pandas as pd
 from tensorflow import set_random_seed
-set_random_seed(42)
 from keras.preprocessing import text, sequence
 from keras.callbacks import ModelCheckpoint, Callback
 from sklearn.metrics import f1_score, recall_score, precision_score
@@ -16,6 +11,12 @@ from classifier_bigru import TextClassifier
 from gensim.models.keyedvectors import KeyedVectors
 import pickle
 import gc
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+set_session(tf.Session(config=config))
+random.seed = 42
+set_random_seed(42)
 
 
 def getClassification(arr):
@@ -52,6 +53,7 @@ class Metrics(Callback):
 
 
 data = pd.read_csv("preprocess/train_char.csv")
+# eval 函数将字符串"["1", "2"]"转化为列表，或者字符串类型的字典，元祖转化为对应的类型
 data["content"] = data.apply(lambda x: eval(x[1]), axis=1)
 
 validation = pd.read_csv("preprocess/validation_char.csv")
@@ -63,17 +65,20 @@ max_features = 20000
 batch_size = 128
 epochs = 15
 tokenizer = text.Tokenizer(num_words=None)
+# fit_on_texts后可获取字典
 tokenizer.fit_on_texts(data["content"].values)
+# 序列化保存分词器
 with open('tokenizer_char.pickle', 'wb') as handle:
     pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 word_index = tokenizer.word_index
 w2_model = KeyedVectors.load_word2vec_format("word2vec/chars.vector", binary=True, encoding='utf8',
+
                                              unicode_errors='ignore')
-embeddings_index = {}
+# embeddings_index = {}
 embeddings_matrix = np.zeros((len(word_index) + 1, w2_model.vector_size))
-word2idx = {"_PAD": 0}
-vocab_list = [(k, w2_model.wv[k]) for k, v in w2_model.wv.vocab.items()]
+# word2idx = {"_PAD": 0}
+# vocab_list = [(k, w2_model.wv[k]) for k, v in w2_model.wv.vocab.items()]
 
 for word, i in word_index.items():
     if word in w2_model:
@@ -84,6 +89,7 @@ for word, i in word_index.items():
         embeddings_matrix[i] = embedding_vector
 
 X_train = data["content"].values
+# 使用 pd.get_dummies进行one-hot编码
 Y_train_ltc = pd.get_dummies(data["location_traffic_convenience"])[[-2, -1, 0, 1]].values
 Y_train_ldfbd = pd.get_dummies(data["location_distance_from_business_district"])[[-2, -1, 0, 1]].values
 Y_train_letf = pd.get_dummies(data["location_easy_to_find"])[[-2, -1, 0, 1]].values
@@ -127,6 +133,7 @@ Y_validation_dr = pd.get_dummies(validation["dish_recommendation"])[[-2, -1, 0, 
 Y_validation_ooe = pd.get_dummies(validation["others_overall_experience"])[[-2, -1, 0, 1]].values
 Y_validation_owta = pd.get_dummies(validation["others_willing_to_consume_again"])[[-2, -1, 0, 1]].values
 
+# 序列化待训练的文本数据
 list_tokenized_train = tokenizer.texts_to_sequences(X_train)
 input_train = sequence.pad_sequences(list_tokenized_train, maxlen=maxlen)
 
@@ -135,6 +142,7 @@ input_validation = sequence.pad_sequences(list_tokenized_validation, maxlen=maxl
 
 print("model1")
 model1 = TextClassifier().model(embeddings_matrix, maxlen, word_index, 4)
+model1.summary()
 file_path = model_dir + "model_ltc_{epoch:02d}.hdf5"
 checkpoint = ModelCheckpoint(file_path, verbose=2, save_weights_only=True)
 metrics = Metrics()
